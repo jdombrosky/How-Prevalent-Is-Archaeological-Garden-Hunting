@@ -1,0 +1,612 @@
+---
+title: "How Prevalent is Archaeological Garden Hunting?"
+author: "Jonathan Dombrosky, Caitlin Ainsworth, Abigail Judkins, Jana Meyer, Michael A. Adler, and Emily Lena Jones"
+date: "1/24/2022"
+output:
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, dpi = 400)
+```
+
+# Libraries
+```{r, message = FALSE, warning = FALSE}
+library(SIBER)
+library(tidyverse)
+library(cowplot)
+library(broom)
+library(car)
+```
+
+# Figure 1
+Plant genera reported by Scribner and Krysel (1982) were assigned a
+photosynthetic pathway from the following sources:
+Basinger and Robertson (1997), Bruhl and Wilson (2007), Danneberger (1999),
+Giussani et al. (2001), Kocacinar and Sage (2003), Nelson (2012),
+Osborne et al. (2014), and Syvertsen et al. (1976).
+```{r, warning = FALSE, fig.width=8, fig.height=4}
+Table_2 <- read.csv("Scribner and Krysl_Table 2/Table 2.csv", header = TRUE)
+
+Pathway <- Table_2 %>%
+  select(Environmental.Context, Photosynthetic.pathway, DF....) %>%
+  group_by(Environmental.Context, Photosynthetic.pathway) %>%
+  summarize(sum_DF = sum(DF....), .groups = "keep")
+
+labels <- c("Agricultural Playa Basins" = "Agricultural Context",
+            "Playa Basins" = "Non-Agricultural Context")
+
+Pathway %>%
+ggplot(aes(x = reorder(Photosynthetic.pathway, -sum_DF), y = sum_DF)) +
+  geom_bar(stat = "identity", size = 0.75, alpha = 0.5, color = "#4d4d4d") +
+  facet_wrap(~ Environmental.Context, ncol = 2, 
+             labeller = labeller(Environmental.Context = labels)) +
+  scale_x_discrete(labels = parse(text = c("C[4]", "C[3]", "C[3]/C[4]"))) +
+  theme_classic() +
+  theme(legend.position="none",
+        strip.background = element_blank(),
+        strip.text.x = element_text(color = "#4d4d4d", size = 12, 
+                                    face = "bold"),
+        axis.line = element_line(color = "#4d4d4d", size = 0.75),
+        axis.text.x = element_text(color = "#4d4d4d", size = 10),
+        axis.text.y = element_text(color = "#4d4d4d", size = 10),
+        axis.title.x = element_text(color = "#4d4d4d", size = 12, 
+                                    face = "bold"),
+        axis.title.y = element_text(color = "#4d4d4d", size = 12, 
+                                    face = "bold"),
+        axis.ticks.x = element_line(color = "#4d4d4d", size = 0.75),
+        axis.ticks.y = element_line(color = "#4d4d4d", size = 0.75)) +
+        labs(x = "Photosynthetic Pathway", y = "% Diet")
+```
+
+# Isotope Data
+Bone from the `archaeo` dataset was demineralized in 0.5 N hydrochloric acid, 
+lipids were removed using 2:1 chloroform:methanol, and the resulting collagen 
+pseudomorph was freeze-dried overnight. Between 0.5 and 0.6 mg of collagen was 
+weighed out for the analysis of δ^13^C and δ^15^N. All seeds from the `seeds` 
+dataset were purchased from Native seeds/SEARCH. Between 5.0 and 6.0 mg of 
+ground corn and 2.0 and 2.5 mg of ground bean/squash was weighed out for the 
+analysis of δ^13^C and δ^15^N. δ^13^C and δ^15^N were measured at the 
+University of New Mexico Center for Stable Isotopes (UNM CSI, Albuquerque, NM) 
+on a Thermo Scientific Delta V isotope ratio mass spectrometer (IRMS) with a 
+dual inlet and Conflo IV interface coupled to a Costech 4010 elemental analyzer
+(EA). Stable isotope values are reported as parts per mil (‰).
+
+The `humans` and `turkeys` isotope values come from the following sources: 
+Chisholm and Matson (1994), Coltrain et al. (2007), Conrad et al. (2016), 
+Jones et al. (2016), Kellner et al. (2010), Kennett et al. (2017), 
+Martin (1999), McCaffery et al. (2014), and Rawlings and Driver (2010).
+```{r}
+archaeo <- read.csv("archaeological.csv", header = TRUE)
+seeds <- read.csv("modern seeds.csv", header = TRUE)
+turkeys <- read.csv("turkeys.csv", header = TRUE) 
+humans <- read.csv("humans.csv", header = TRUE)
+```
+
+# Assessing Collagen Purity
+Boxplots of C:N~atomic~ values of archaeological leporid collagen per site.
+The blue box represents the acceptable range of collagen purity (2.9-3.6) 
+reported by Ambrose (1990). 
+```{r, fig.width = 7, fig.height = 5}
+archaeo %>%
+  mutate(CNatomic = CN * (14/12)) %>%
+  ggplot(mapping = aes(y = CNatomic, x = Site.Name, group = Site.Name)) +
+  geom_boxplot(color = "#4d4d4d", size = 0.75) +
+  labs(y = expression("C:N"[atomic]), x = "Archaeological Site") +
+  theme_classic() +
+  theme(legend.position="none",
+        axis.line = element_line(color = "#4d4d4d", size = 1),
+        axis.text.x = element_text(color = "#4d4d4d", size = 12),
+        axis.text.y = element_text(color = "#4d4d4d", size = 12),
+        axis.title.x = element_text(color = "#4d4d4d", size = 14),
+        axis.title.y = element_text(color = "#4d4d4d", size = 14),
+        axis.ticks.x = element_line(color = "#4d4d4d", size = 1),
+        axis.ticks.y = element_line(color = "#4d4d4d", size = 1)) +
+    scale_y_continuous(limits=c(2.9, 3.6)) +
+  annotate(geom = "rect", xmin = -Inf, xmax = Inf, ymin = 2.9, ymax = 3.6, 
+           color = "#5da5d8", fill =  "#5da5d8", alpha = 0.5, size = 1)
+```
+
+# Data Wrangling
+A ^13^C Suess correction of 2.0‰ was applied to the modern seed data 
+(Dombrosky 2020). 
+```{r}
+seeds <- seeds %>%
+  mutate(d13Csuess = d13C + 2)
+
+archaeo_SIBER <- archaeo %>%
+  unite(group, Site.Name, Genus, sep = " ") %>%
+  select(group, d13C, d15N)
+
+seeds_SIBER <- seeds %>%
+  select(Comparative.Group, d13Csuess, d15N) %>%
+  rename(group = Comparative.Group,
+         d13C = d13Csuess)
+
+turkeys_SIBER <- turkeys %>%
+  mutate(animal = "Turkey") %>%
+  unite(group, Diet.Type, animal, sep = " ") %>%
+  select(group, d13C, d15N)
+  
+
+humans_SIBER <-  humans %>%
+  mutate(group = "Humans") %>%
+  select(group, d13C, d15N)
+
+SIBER_data <- rbind(archaeo_SIBER, seeds_SIBER, turkeys_SIBER, humans_SIBER)
+```
+
+# Figure 2
+## Sand Canyon Pueblo Figures
+```{r, fig.width = 7, fig.height = 5}
+sand_label_df <- data.frame(
+  group = c("Sand Canyon Pueblo Lepus", "Sand Canyon Pueblo Sylvilagus",
+            "Free-ranging Turkey", "Humans", "Maize-fed Turkey", "Bean",
+            "Squash", "Corn"),
+  label = c("Sand Canyon Pueblo\nJackrabbbits",
+            "Sand Canyon Pueblo\nCottontails",
+            "Free-Ranging\nTurkeys", "Humans", "Maize-Fed Turkeys", "Beans",
+            "Squash", "Maize"),
+  d13C = c(-17, -20, -13.25, -5.8, -8, -25.25, -24, -9.75),
+  d15N = c(-0.75, 11, 2.5, 12.2, 4.1, -2, 13.25, -1),
+  hjust = c(0.5, 0.5, 0.5, 0, 0, 1, 1, 1),
+  vjust = c(1, 0, 0, 1, 1, 1, 0, 1))
+
+sand_label_df$group <- factor(sand_label_df$group, 
+                          levels = c("Sand Canyon Pueblo Lepus",
+                                     "Sand Canyon Pueblo Sylvilagus",
+                                     "Free-ranging Turkey", "Humans", 
+                                     "Maize-fed Turkey", "Bean", "Squash",
+                                     "Corn"))
+
+sand_plot <- SIBER_data %>%
+  filter(group %in% c("Sand Canyon Pueblo Lepus", 
+                      "Sand Canyon Pueblo Sylvilagus",
+                      "Bean", "Corn", "Squash", "Free-ranging Turkey",
+                      "Maize-fed Turkey", "Humans"))
+  
+sand_plot$group <- factor(sand_plot$group, 
+                          levels = c("Sand Canyon Pueblo Lepus",
+                                     "Sand Canyon Pueblo Sylvilagus",
+                                     "Free-ranging Turkey", "Humans", 
+                                     "Maize-fed Turkey", "Bean", "Squash",
+                                     "Corn")) 
+  
+sand_p1 <- ggplot(sand_plot, aes(x = d13C, y = d15N)) +
+  geom_point(aes(fill = group, color = group), stroke = 1, size = 4, 
+             alpha = 0.5, shape = 21) +
+  geom_point(aes(color = group), fill = NA, stroke = 1, size = 4, 
+             shape = 21) +
+  ylab(expression(paste(delta^{15}, "N (\u2030)"))) +
+  xlab(expression(paste(delta^{13}, "C (\u2030)"))) + 
+  theme_classic() +
+  theme(legend.position = "none",
+        axis.line = element_line(color = "#4d4d4d", size = 1),
+        axis.text.x = element_text(color = "#4d4d4d", size = 12),
+        axis.text.y = element_text(color = "#4d4d4d", size = 12),
+        axis.title.x = element_text(color = "#4d4d4d", size = 14, 
+                                    face = "bold"),
+        axis.title.y = element_text(color = "#4d4d4d", size = 14, 
+                                    face = "bold"),
+        axis.ticks.x = element_line(color = "#4d4d4d", size = 1),
+        axis.ticks.y = element_line(color = "#4d4d4d", size = 1)) + 
+  scale_color_viridis_d() +
+  stat_ellipse(aes(group = interaction(group), color = group, fill = group), 
+               alpha = 0.25, size = 0.75, linetype = 3, level = 0.95, 
+               type = "t", geom = "polygon") + 
+  geom_text(data = sand_label_df,aes(x = d13C, y = d15N, 
+                                label = label, color = group, hjust = hjust,
+                                vjust = vjust),
+            size = 9/.pt, fontface = "bold") +
+  scale_fill_viridis_d() +
+  scale_x_continuous(limits=c(-27.5, -4), 
+                     breaks = c(-25, -20, -15, -10, -5)) +
+  scale_y_continuous(limits=c(-3, 15))
+
+sand_p1
+
+sand_p2 <- ggplot(sand_plot, aes(x = d13C, y = d15N)) +
+  ylab(expression(paste(delta^{15}, "N (\u2030)"))) +
+  xlab(expression(paste(delta^{13}, "C (\u2030)"))) + 
+  theme_classic() +
+  theme(legend.position = "none",
+        axis.line = element_line(color = "#4d4d4d", size = 1),
+        axis.text.x = element_text(color = "#4d4d4d", size = 12),
+        axis.text.y = element_text(color = "#4d4d4d", size = 12),
+        axis.title.x = element_text(color = "#4d4d4d", size = 14, 
+                                    face = "bold"),
+        axis.title.y = element_text(color = "#4d4d4d", size = 14, 
+                                    face = "bold"),
+        axis.ticks.x = element_line(color = "#4d4d4d", size = 1),
+        axis.ticks.y = element_line(color = "#4d4d4d", size = 1)) + 
+  scale_color_viridis_d() +
+  stat_ellipse(aes(group = interaction(group), color = group, fill = group), 
+               alpha = 0.5, size = 1.1, linetype = 1, level = 0.40, 
+               type = "t", geom = "polygon") +
+  stat_ellipse(aes(group = interaction(group), color = group, fill = group), 
+               alpha = 0.25, size = 0.75, linetype = 3, level = 0.95, 
+               type = "t", geom = "polygon") + 
+  geom_text(data = sand_label_df,aes(x = d13C, y = d15N, 
+                                label = label, color = group, hjust = hjust,
+                                vjust = vjust),
+            size = 9/.pt, fontface = "bold") +
+  scale_fill_viridis_d() +
+  scale_x_continuous(limits=c(-27.5, -4), 
+                     breaks = c(-25, -20, -15, -10, -5)) +
+  scale_y_continuous(limits=c(-3, 15))
+
+sand_p2
+```
+
+## Hummingbird Pueblo Figures
+```{r, fig.width = 7, fig.height = 5}
+hum_label_df <- data.frame(
+  group = c("Hummingbird Pueblo Lepus", "Hummingbird Pueblo Sylvilagus",
+            "Free-ranging Turkey", "Humans", "Maize-fed Turkey", "Bean",
+            "Squash", "Corn"),
+  label = c("Hummingbird Pueblo\nJackrabbbits",
+            "Hummingbird Pueblo\nCottontails",
+            "Free-Ranging\nTurkeys", "Humans", "Maize-Fed Turkeys", "Beans",
+            "Squash", "Maize"),
+  d13C = c(-20, -14.25, -20, -5.8, -8, -25.25, -24, -9.75),
+  d15N = c(1.5, -1.25, 10, 12.2, 4.1, -2, 13.25, -1),
+  hjust = c(0.5, 0.5, 0.5, 0, 0, 1, 1, 1),
+  vjust = c(1, 0, 0, 1, 1, 1, 0, 1))
+
+hum_label_df$group <- factor(hum_label_df$group, 
+                          levels = c("Hummingbird Pueblo Lepus",
+                                     "Hummingbird Pueblo Sylvilagus",
+                                     "Free-ranging Turkey", "Humans", 
+                                     "Maize-fed Turkey", "Bean", "Squash",
+                                     "Corn"))
+
+hum_plot <- SIBER_data %>%
+  filter(group %in% c("Hummingbird Pueblo Lepus", 
+                      "Hummingbird Pueblo Sylvilagus",
+                      "Bean", "Corn", "Squash", "Free-ranging Turkey",
+                      "Maize-fed Turkey", "Humans"))
+  
+hum_plot$group <- factor(hum_plot$group, 
+                          levels = c("Hummingbird Pueblo Lepus",
+                                     "Hummingbird Pueblo Sylvilagus",
+                                     "Free-ranging Turkey", "Humans", 
+                                     "Maize-fed Turkey", "Bean", "Squash",
+                                     "Corn")) 
+  
+hum_p1 <- ggplot(hum_plot, aes(x = d13C, y = d15N)) +
+  geom_point(aes(fill = group, color = group), stroke = 1, size = 4, 
+             alpha = 0.5, shape = 21) +
+  geom_point(aes(color = group), fill = NA, stroke = 1, size = 4, 
+             shape = 21) +
+  ylab(expression(paste(delta^{15}, "N (\u2030)"))) +
+  xlab(expression(paste(delta^{13}, "C (\u2030)"))) + 
+  theme_classic() +
+  theme(legend.position = "none",
+        axis.line = element_line(color = "#4d4d4d", size = 1),
+        axis.text.x = element_text(color = "#4d4d4d", size = 12),
+        axis.text.y = element_text(color = "#4d4d4d", size = 12),
+        axis.title.x = element_text(color = "#4d4d4d", size = 14, 
+                                    face = "bold"),
+        axis.title.y = element_text(color = "#4d4d4d", size = 14, 
+                                    face = "bold"),
+        axis.ticks.x = element_line(color = "#4d4d4d", size = 1),
+        axis.ticks.y = element_line(color = "#4d4d4d", size = 1)) + 
+  scale_color_viridis_d() +
+  stat_ellipse(aes(group = interaction(group), color = group, fill = group), 
+               alpha = 0.25, size = 0.75, linetype = 3, level = 0.95, 
+               type = "t", geom = "polygon") + 
+  geom_text(data = hum_label_df,aes(x = d13C, y = d15N, 
+                                label = label, color = group, hjust = hjust,
+                                vjust = vjust),
+            size = 9/.pt, fontface = "bold") +
+  scale_fill_viridis_d() +
+  scale_x_continuous(limits=c(-27.5, -4), 
+                     breaks = c(-25, -20, -15, -10, -5)) +
+  scale_y_continuous(limits=c(-3, 15))
+
+hum_p1
+
+hum_p2 <- ggplot(hum_plot, aes(x = d13C, y = d15N)) +
+  ylab(expression(paste(delta^{15}, "N (\u2030)"))) +
+  xlab(expression(paste(delta^{13}, "C (\u2030)"))) + 
+  theme_classic() +
+  theme(legend.position = "none",
+        axis.line = element_line(color = "#4d4d4d", size = 1),
+        axis.text.x = element_text(color = "#4d4d4d", size = 12),
+        axis.text.y = element_text(color = "#4d4d4d", size = 12),
+        axis.title.x = element_text(color = "#4d4d4d", size = 14, 
+                                    face = "bold"),
+        axis.title.y = element_text(color = "#4d4d4d", size = 14, 
+                                    face = "bold"),
+        axis.ticks.x = element_line(color = "#4d4d4d", size = 1),
+        axis.ticks.y = element_line(color = "#4d4d4d", size = 1)) + 
+  scale_color_viridis_d() +
+  stat_ellipse(aes(group = interaction(group), color = group, fill = group), 
+               alpha = 0.5, size = 1.1, linetype = 1, level = 0.40, type = "t", 
+               geom = "polygon") +
+  stat_ellipse(aes(group = interaction(group), color = group, fill = group), 
+               alpha = 0.25, size = 0.75, linetype = 3, level = 0.95, 
+               type = "t", geom = "polygon") + 
+  geom_text(data = hum_label_df,aes(x = d13C, y = d15N, 
+                                label = label, color = group, hjust = hjust,
+                                vjust = vjust),
+            size = 9/.pt, fontface = "bold") +
+  scale_fill_viridis_d() +
+  scale_x_continuous(limits=c(-27.5, -4), 
+                     breaks = c(-25, -20, -15, -10, -5)) +
+  scale_y_continuous(limits=c(-3, 15))
+
+hum_p2
+```
+
+## Tijeras Pueblo Figures
+```{r, fig.width = 7, fig.height = 5}
+tij_label_df <- data.frame(
+  group = c("Tijeras Pueblo Lepus", "Tijeras Pueblo Sylvilagus",
+            "Free-ranging Turkey", "Humans", "Maize-fed Turkey", "Bean",
+            "Squash", "Corn"),
+  label = c("Tijeras Pueblo\nJackrabbbits",
+            "Tijeras Pueblo\nCottontails",
+            "Free-Ranging\nTurkeys", "Humans", "Maize-Fed Turkeys", "Beans",
+            "Squash", "Maize"),
+  d13C = c(-21, -17.5, -17.25, -5.8, -8, -25.25, -24, -9.75),
+  d15N = c(1.5, -1.75, 9.5, 12.2, 4.1, -2, 13.25, -1),
+  hjust = c(0.5, 0.5, 0.5, 0, 0, 1, 1, 1),
+  vjust = c(1, 0, 0, 1, 1, 1, 0, 1))
+
+tij_label_df$group <- factor(tij_label_df$group, 
+                          levels = c("Tijeras Pueblo Lepus",
+                                     "Tijeras Pueblo Sylvilagus",
+                                     "Free-ranging Turkey", "Humans", 
+                                     "Maize-fed Turkey", "Bean", "Squash",
+                                     "Corn"))
+
+tij_plot <- SIBER_data %>%
+  filter(group %in% c("Tijeras Pueblo Lepus", 
+                      "Tijeras Pueblo Sylvilagus",
+                      "Bean", "Corn", "Squash", "Free-ranging Turkey",
+                      "Maize-fed Turkey", "Humans"))
+  
+tij_plot$group <- factor(tij_plot$group, 
+                          levels = c("Tijeras Pueblo Lepus",
+                                     "Tijeras Pueblo Sylvilagus",
+                                     "Free-ranging Turkey", "Humans", 
+                                     "Maize-fed Turkey", "Bean", "Squash",
+                                     "Corn")) 
+  
+tij_p1 <- ggplot(tij_plot, aes(x = d13C, y = d15N)) +
+  geom_point(aes(fill = group, color = group), stroke = 1, size = 4, 
+             alpha = 0.5, shape = 21) +
+  geom_point(aes(color = group), fill = NA, stroke = 1, size = 4, 
+             shape = 21) +
+  ylab(expression(paste(delta^{15}, "N (\u2030)"))) +
+  xlab(expression(paste(delta^{13}, "C (\u2030)"))) + 
+  theme_classic() +
+  theme(legend.position = "none",
+        axis.line = element_line(color = "#4d4d4d", size = 1),
+        axis.text.x = element_text(color = "#4d4d4d", size = 12),
+        axis.text.y = element_text(color = "#4d4d4d", size = 12),
+        axis.title.x = element_text(color = "#4d4d4d", size = 14, 
+                                    face = "bold"),
+        axis.title.y = element_text(color = "#4d4d4d", size = 14, 
+                                    face = "bold"),
+        axis.ticks.x = element_line(color = "#4d4d4d", size = 1),
+        axis.ticks.y = element_line(color = "#4d4d4d", size = 1)) + 
+  scale_color_viridis_d() +
+  stat_ellipse(aes(group = interaction(group), color = group, fill = group), 
+               alpha = 0.25, size = 0.75, linetype = 3, level = 0.95, 
+               type = "t", geom = "polygon") + 
+  geom_text(data = tij_label_df,aes(x = d13C, y = d15N, 
+                                label = label, color = group, hjust = hjust,
+                                vjust = vjust),
+            size = 9/.pt, fontface = "bold") +
+  scale_fill_viridis_d() +
+  scale_x_continuous(limits=c(-27.5, -4), 
+                     breaks = c(-25, -20, -15, -10, -5)) +
+  scale_y_continuous(limits=c(-3, 15))
+
+tij_p1
+
+tij_p2 <- ggplot(tij_plot, aes(x = d13C, y = d15N)) +
+  ylab(expression(paste(delta^{15}, "N (\u2030)"))) +
+  xlab(expression(paste(delta^{13}, "C (\u2030)"))) + 
+  theme_classic() +
+  theme(legend.position = "none",
+        axis.line = element_line(color = "#4d4d4d", size = 1),
+        axis.text.x = element_text(color = "#4d4d4d", size = 12),
+        axis.text.y = element_text(color = "#4d4d4d", size = 12),
+        axis.title.x = element_text(color = "#4d4d4d", size = 14, 
+                                    face = "bold"),
+        axis.title.y = element_text(color = "#4d4d4d", size = 14, 
+                                    face = "bold"),
+        axis.ticks.x = element_line(color = "#4d4d4d", size = 1),
+        axis.ticks.y = element_line(color = "#4d4d4d", size = 1)) + 
+  scale_color_viridis_d() +
+  stat_ellipse(aes(group = interaction(group), color = group, fill = group), 
+               alpha = 0.5, size = 1.1, linetype = 1, level = 0.40, 
+               type = "t", geom = "polygon") +
+  stat_ellipse(aes(group = interaction(group), color = group, fill = group), 
+               alpha = 0.25, size = 0.75, linetype = 3, level = 0.95, 
+               type = "t", geom = "polygon") + 
+  geom_text(data = tij_label_df,aes(x = d13C, y = d15N, 
+                                label = label, color = group, hjust = hjust,
+                                vjust = vjust),
+            size = 9/.pt, fontface = "bold") +
+  scale_fill_viridis_d() +
+  scale_x_continuous(limits=c(-27.5, -4), 
+                     breaks = c(-25, -20, -15, -10, -5)) +
+  scale_y_continuous(limits=c(-3, 15))
+
+tij_p2
+```
+
+## Combine Figures
+```{r, fig.width = 14, fig.height = 15}
+all_plots <- plot_grid(sand_p1, sand_p2, hum_p1, hum_p2, tij_p1, tij_p2,
+                       labels = "AUTO", label_colour = "#4d4d4d", 
+                       label_size = 20, ncol = 2, nrow = 3)
+
+all_plots
+
+ggsave("Figure 2.jpg", dpi = 300)
+```
+
+## Test for Normality
+Some isotope values per group are non-normal. Thus, ellipses in
+Figure 2 are visualized based on the t-distribution, which is also good for
+small sample sizes.
+```{r}
+SIBER_data %>%
+  group_by(group) %>%
+  do(tidy(shapiro.test(.$d13C)))
+
+SIBER_data %>%
+  group_by(group) %>%
+  do(tidy(shapiro.test(.$d15N)))
+```
+
+# SIBER Area Calculations
+TA = Total Area, SEA = Standard Ellipse Area, and SEAc = Small Sample Size
+Corrected Standard Ellipse Area (see Jackson et al. 2011)
+```{r, fig.height=8, fig.width=10}
+siber.example <- SIBER_data %>%
+  select(d13C, d15N, group) %>%
+  mutate(community = 1) %>%
+  rename(iso1 = d13C,
+         iso2 = d15N)
+  
+siber.example <- createSiberObject(siber.example)
+
+group.ML1 <- data.frame(groupMetricsML(siber.example)) %>%
+  rename("Hummingbird Jackrabbits" = X1.Hummingbird.Pueblo.Lepus,
+         "Hummingbird Cottontails" = X1.Hummingbird.Pueblo.Sylvilagus,
+         "Sand Canyon Jackrabbit" = X1.Sand.Canyon.Pueblo.Lepus,
+         "Sand Canyon Cottontails" = X1.Sand.Canyon.Pueblo.Sylvilagus,
+         "Tijeras Pueblo Jackrabbits" = X1.Tijeras.Pueblo.Lepus,
+         "Tijeras Pueblo Cottontails" = X1.Tijeras.Pueblo.Sylvilagus,
+         "Beans" = X1.Bean,
+         "Maize" = X1.Corn,
+         "Squash" = X1.Squash,
+         "Free-ranging Turkey" = X1.Free.ranging.Turkey,
+         "Maize-fed Turkey" = X1.Maize.fed.Turkey,
+         "Humans" = X1.Humans) %>%
+  t() %>%
+  round(digits = 2)
+  
+group.ML1
+```
+
+# SIBER Maximum Likelihood Overlap with Humans Calculations
+```{r}
+results <- data.frame()
+taxa <- c("1.Hummingbird Pueblo Lepus", "1.Hummingbird Pueblo Sylvilagus", 
+              "1.Sand Canyon Pueblo Lepus", 
+              "1.Sand Canyon Pueblo Sylvilagus",
+              "1.Tijeras Pueblo Lepus", 
+              "1.Tijeras Pueblo Sylvilagus",
+              "1.Maize-fed Turkey")
+
+for (i in seq_along(taxa)) {
+  
+  sea.overlap <- maxLikOverlap(taxa[[i]], "1.Humans", siber.example, 
+                             p.interval = 0.95, n = 100)
+  
+  results[i, 1] <- taxa[[i]]
+  results[i, 2] <- round(sea.overlap[[3]], digits = 2)
+  results[i, 3] <- round(sea.overlap[[3]]/sea.overlap[[2]]*100, digits = 2)
+  results[i, 4] <- round(sea.overlap[[3]]/sea.overlap[[1]]*100, digits = 2)
+  results[i, 5] <- round(sea.overlap[[3]]/(sea.overlap[[2]] + 
+                                             sea.overlap[[1]] - 
+                                             sea.overlap[[3]])*100, digits = 2)
+}
+
+colnames(results) <- c("group", "overlap ‰", "% human niche", "% group niche", 
+                       "% overlap")
+
+results$group <- gsub("1.","", as.character(results$group))
+results$group <- gsub("Lepus","Jackrabbits", as.character(results$group))
+results$group <- gsub("Sylvilagus","Cottontails", as.character(results$group))
+
+results
+
+round(mean(results$`% human niche`[1:6]), digits = 2)
+round(mean(results$`% group niche`[1:6]), digits = 2)
+```
+# References
+Ambrose SH (1990) Preparation and characterization of bone and tooth collagen
+  for isotopic analysis. Journal of Archaeological Science 17(4):431-451.
+
+Basinger MA & Robertson PA (1997) Vascular flora of an old-growth forest 
+  remnant in the Ozark hills of southern Illinois-updated results. 
+  Transactions of the Illinois State Academy of Science 90(1-2):1-20.
+
+Bruhl JJ & Wilson KL (2007) Towards a comprehensive survey of C3 and C4 
+  photosynthetic pathways in Cyperaceae. Aliso: A Journal of Systematic and 
+  Evolutionary Botany 23(1):99-148.
+
+Chisholm B & Matson RG (1994) Carbon and Nitrogen Isotopic Evidence on
+  Basketmaker II Diet at Cedar Mesa, Utah. KIVA 60(2):239-255.
+
+Coltrain JB, Janetski JC, & Carlyle SW (2007) The Stable- and Radio-Isotope
+  Chemistry of Western Basketmaker Burials: Implications for Early Puebloan 
+  Diets and Origins. American Antiquity 72(2):301-321.
+
+Conrad C, Jones EL, Newsome SD, & Schwartz DW (2016) Bone isotopes, eggshell 
+  and turkey husbandry at Arroyo Hondo Pueblo. Journal of Archaeological 
+  Science:Reports 10:566-574.
+
+Danneberger K (1999) Weeds: shedding light on an old foe. Turf Grass Trends 
+  8(11):1-3.
+
+Dombrosky J (2020) A ~1000-year 13C Suess correction model for the study of
+  past ecosystems. The Holocene 30(3):474-478.
+
+Giussani LM, Cota-Sánchez JH, Zuloaga FO, & Kellogg EA (2001) A molecular 
+  phylogeny of the grass subfamily Panicoideae (Poaceae) shows multiple origins 
+  of C4 photosynthesis. American Journal of Botany 88(11):1993-2012.
+
+Jackson AL, Inger R, Parnell AC, & Bearhop S (2011) Comparing isotopic niche 
+  widths among and within communities: SIBER – Stable Isotope Bayesian Ellipses 
+  in R. Journal of Animal Ecology 80(3):595-602.
+
+Jones EL, Conrad C, Newsome SD, Kemp BM, & Kocer JM (2016) Turkeys on the 
+  fringe: Variable husbandry in “marginal” areas of the prehistoric American 
+  Southwest. Journal of Archaeological Science: Reports 10:575-583.
+
+Kellner CM, Schoeninger M, Spielmann KA, & Moore K (2010) Stable isotope data 
+  show temporal stability in diet at Pecos Pueblo and diet variation among 
+  Southwest pueblos. Pecos Pueblo revisited: the biological and social context,
+  ed Morgan ME (Peabody Museum Press, Cambridge, MA), Vol 85, pp 79-91.
+
+Kennett DJ, et al. (2017) Archaeogenomic evidence reveals prehistoric 
+  matrilineal dynasty. Nature Communications 8:14115.
+
+Kocacinar F & Sage RF (2003) Photosynthetic pathway alters xylem structure and
+  hydraulic function in herbaceous plants. Plant, Cell & Environment 
+  26(12):2015-2026.
+
+Martin SL (1999) Virgin Anasazi Diet as Demonstrated Through the Analysis of
+  Stable Carbon and Nitrogen Isotopes. KIVA 64(4):495-514.
+
+McCaffery H, Tykot RH, Gore KD, & DeBoer BR (2014) Stable Isotope Analysis of 
+  Turkey (Meleagris gallopavo) Diet from Pueblo II and Pueblo III Sites, Middle
+  San Juan Region, Northwest New Mexico. American Antiquity 79(2):337-352.
+
+Nelson DM (2012) Carbon isotopic composition of Ambrosia and Artemisia pollen:
+  assessment of a C3-plant paleophysiological indicator. New Phytologist 
+  195(4):787-793.
+
+Osborne CP, et al. (2014) A global database of C4 photosynthesis in grasses. 
+  New Phytologist 204(3):441-446.
+
+Rawlings TA & Driver JC (2010) Paleodiet of domestic turkey, Shields Pueblo 
+  (5MT3807), Colorado: isotopic analysis and its implications for care of a 
+  household domesticate. Journal of Archaeological Science 37(10):2433-2441.
+
+Scribner KT & Krysl LJ (1982) Summer Foods of the Aububons Cottontail 
+  (Sylvilagus auduboni: Leporidae) on Texas Panhandle Playa Basins. 
+  The Southwestern Naturalist 27(4):460-463.
+
+Syvertsen JP, Nickell GL, Spellenberg RW, & Cunningham GL (1976) Carbon 
+  Reduction Pathways and Standing Crop in Three Chihuahuan Desert Plant 
+  Communities. The Southwestern Naturalist 21(3):311-320.
